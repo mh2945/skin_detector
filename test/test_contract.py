@@ -5,6 +5,7 @@ sample2 가 net8.0 소스 링크로 강제했던 계층 규율의 Python 등가�
 """
 
 import ast
+import re
 import sys
 import tomllib
 from dataclasses import fields
@@ -69,12 +70,18 @@ def test_web_does_not_import_core_directly():
         pytest.skip("web/ 없음")
     bad = []
     for path in _py_files(web):
-        text = path.read_text(encoding="utf-8")
-        tree = ast.parse(text, filename=str(path))
+        # `from x.core import y` 와 `import skin_detector.core.color` 를 **둘 다** 본다.
+        # ImportFrom 만 보면 후자가 그대로 새어 나간다.
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                if "core" in node.module.split("."):
-                    bad.append("{}:{} -> {}".format(path.name, node.lineno, node.module))
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            for name in names:
+                if "core" in name.split("."):
+                    bad.append("{}:{} -> {}".format(path.name, node.lineno, name))
     assert not bad, ("web/ 은 core/ 를 직접 import 하지 않는다 (계약 9번): "
                      + ", ".join(bad))
 
@@ -133,3 +140,73 @@ def test_only_one_external_data_file():
     spectra = sorted(p.name for p in (ROOT / "data" / "spectra").glob("*")
                      if p.is_file())
     assert spectra == ["hb_melanin_extinction.csv"], spectra
+
+
+# ── 의존성 선언이 두 곳에 있다: 그 둘이 어긋나지 않게 한다 ────────────
+
+def _pyproject_requirements():
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    proj = data["project"]
+    reqs = list(proj.get("dependencies", []))
+    for extra in proj.get("optional-dependencies", {}).values():
+        reqs += list(extra)
+    names = set()
+    for r in reqs:
+        # "uvicorn[standard]>=0.27" -> "uvicorn"
+        name = re.split(r"[<>=!\[;\s]", r, 1)[0].strip().lower()
+        if name:
+            names.add(name.replace("_", "-"))
+    return names
+
+
+def _setup_script_packages():
+    """setup_env.ps1 의 `pip install` 줄에서 패키지 이름만 뽑는다.
+
+    PowerShell 의 줄 이음 문자는 백틱이다. 백틱으로 끝나는 줄은 다음 줄까지 이어붙인다.
+    """
+    lines = (ROOT / "scripts" / "setup_env.ps1").read_text(
+        encoding="utf-8").splitlines()
+    body = None
+    for i, line in enumerate(lines):
+        # 주석에도 "pip install" 이 나온다 (Store 스텁 함정 설명). 실행 줄만 본다.
+        if line.lstrip().startswith("#"):
+            continue
+        if "pip install" not in line or "--upgrade pip" in line:
+            continue
+        chunk, j = line, i
+        while chunk.rstrip().endswith("`"):
+            j += 1
+            chunk = chunk.rstrip().rstrip("`") + " " + lines[j]
+        body = chunk
+        break
+    assert body is not None, "setup_env.ps1 의 pip install 줄을 찾지 못했다"
+
+    names = set()
+    for tok in body.replace('"', " ").split():
+        tok = tok.strip()
+        if (not tok or tok.startswith(("-", "&", "$"))
+                or tok in ("pip", "install", "-m")):
+            continue
+        name = re.split(r"[<>=!\[]", tok, maxsplit=1)[0].strip().lower()
+        if name and name.replace("-", "").replace(".", "").isalnum():
+            names.add(name.replace("_", "-"))
+    return names
+
+
+def test_setup_script_installs_what_pyproject_declares():
+    """의존성이 두 곳에 선언되어 있다 — 어긋나면 여기서 잡는다.
+
+    실제로 환경을 만드는 것은 `setup_env.ps1` 이고 `pyproject.toml` 은 문서에
+    가깝다. 둘이 갈라지면 "문서에는 있는데 안 깔리는" 패키지가 생기고,
+    그 상태는 새 클론에서만 드러나므로 발견이 늦다.
+
+    버전 핀까지는 강제하지 않는다 (setup 스크립트는 의도적으로 핀이 없다).
+    **이름 집합**만 일치하면 된다.
+    """
+    declared = _pyproject_requirements()
+    installed = _setup_script_packages()
+    missing = declared - installed
+    extra = installed - declared
+    assert not missing, "pyproject 에는 있는데 setup_env.ps1 이 안 깐다: {}".format(
+        sorted(missing))
+    assert not extra, "setup_env.ps1 만 까는 패키지: {}".format(sorted(extra))

@@ -1,0 +1,65 @@
+# 검증 게이트. 사진 없이 도는 것만 여기서 돌린다.
+#
+# 실사진 검증(validate.py stability / agreement)은 data/store 가 필요하고
+# 그건 개인정보라 저장소에 없다. CI 가 할 수 있는 것은 "코드가 무너지지 않았는가"까지다.
+# 성능 주장은 여기서 나오지 않는다 (docs/LIMITS.md).
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # 이 프로젝트의 배포 대상이 Windows 다. 인코딩·경로 함정이 여기서만 드러난다.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # pyproject 의 requires-python 하한과 같아야 한다 (tomllib = 3.11+).
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성
+        # 선언은 pyproject 한 곳에서만 읽는다. setup_env.ps1 과의 일치는
+        # test_contract.py::test_setup_script_installs_what_pyproject_declares 가 지킨다.
+        run: python -m pip install -e ".[web,dev]"
+
+      - name: 랜드마커 모델
+        # models/ 는 gitignore 라 체크아웃에 없다. 없으면 스크립트 4개가 전부 죽는데
+        # pytest 는 그대로 통과하므로, 받아 두지 않으면 그 차이를 CI 가 못 본다.
+        run: |
+          New-Item -ItemType Directory -Force models | Out-Null
+          Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" -OutFile "models/face_landmarker.task"
+
+      - name: 테스트 + 커버리지
+        run: >
+          python -m pytest -q
+          --cov=src/skin_detector --cov=web
+          --cov-report=term-missing --cov-fail-under=80
+
+      - name: 스크립트 스모크 (cp949 리다이렉트)
+        # **리다이렉트된 출력**에서만 로케일 폴백이 일어난다. 한국어 Windows 의
+        # cp949 를 강제해, em-dash 하나로 검증 게이트가 죽던 회귀를 다시 잡는다.
+        env:
+          PYTHONIOENCODING: cp949
+        run: |
+          foreach ($s in "analyze","validate","reprocess","tune") {
+            python "scripts/$s.py" --help > $null 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "scripts/$s.py --help exit=$LASTEXITCODE" }
+          }
+          python scripts/validate.py stability > $null 2>&1
+          # store 가 비어 있으므로 1(데이터 없음)이 정상이다. 크래시(다른 코드)면 실패.
+          if ($LASTEXITCODE -ne 1) { throw "validate.py stability exit=$LASTEXITCODE" }
+
+      - name: 합성 복원 선형성
+        # 유일하게 데이터 없이 판정이 나오는 검증. 종료 코드로 게이트한다.
+        # store 가 비면 1 로 끝나므로 통과, 선형성이 깨지면 2 로 끝나 실패한다.
+        run: |
+          python scripts/validate.py synth
+          if ($LASTEXITCODE -eq 2) { throw "합성 Delta 복원 선형성 미충족" }

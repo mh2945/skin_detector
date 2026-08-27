@@ -172,10 +172,24 @@ def test_baseline_uses_multiple_reference_regions(landmarks):
 
 
 def test_anatomical_prior_flag_is_honest(landmarks):
-    """mu_r 를 아직 추정하지 않았으면 calibrated=False 로 나가야 한다."""
+    """mu_r 유무가 플래그에 **양방향으로** 반영돼야 한다.
+
+    `False` 만 단언하면 플래그가 `bool(mu_r)` 인 이상 절대 실패할 수 없는 테스트가
+    된다. 상수를 재진술하는 대신, 준 경우와 안 준 경우를 모두 본다.
+    """
     lin = synthetic_face_linear()
-    masks, eri, base, _, _ = build(lin, landmarks)
+    masks, eri, base, _, cov = build(lin, landmarks)
     assert base.anatomical_prior_calibrated is False
+
+    bcfg = BaselineConfig()
+    w = color.snr_weights(lin)
+    _eri, alpha, beta = measure.fit_eri(
+        *color.chromophore_axes(color.optical_density(lin)),
+        masks.skin, w, bcfg)
+    mu_r = {r: 0.001 for r in ALL_REGIONS}
+    calibrated = measure.compute_baseline(
+        eri, masks.skin, w, masks.regions, cov, alpha, beta, bcfg, mu_r=mu_r)
+    assert calibrated.anatomical_prior_calibrated is True
 
 
 def test_mu_r_shifts_only_its_own_region(landmarks):

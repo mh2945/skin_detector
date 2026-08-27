@@ -18,7 +18,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from skin_detector.core import color, mask as mask_mod  # noqa: E402
+from skin_detector.core import color, mask as mask_mod, measure  # noqa: E402
 from skin_detector.core.types import CANONICAL_IPD, CANONICAL_SIZE  # noqa: E402
 
 EYE_Y = 292.0
@@ -104,10 +104,22 @@ def synthetic_face_linear(
     base_rgb=(0.44, 0.30, 0.25),
     shading: bool = True,
     noise: float = 0.004,
+    texture: float = 0.0,
 ) -> np.ndarray:
-    """합성 피부 선형 반사율. 음영 구배와 노이즈를 포함한다.
+    """합성 피부 선형 반사율. 음영 구배·미세 질감·센서 노이즈를 포함한다.
 
     음영은 로그 비율이 **정확히 소거**해야 하는 교란이므로 기본으로 넣는다.
+
+    `texture` 와 `noise` 는 물리적으로 다른 것이고 그래서 따로 있다:
+
+    - `texture` = 모공·솜털이 만드는 **무채색 곱셈** 성분. 표면 기하가 만드는 음영이라
+      세 채널을 같은 비율로 움직이고, 따라서 로그 비율 e·m 에서 **정확히 소거된다.**
+      흐림 게이트(`min_blur_vol`)가 보는 것이 바로 이것이다.
+    - `noise` = 센서 읽기 노이즈. 채널마다 독립이라 소거되지 않고 e·m 에 그대로 남는다.
+
+    이 구분이 없으면 흐림 게이트를 통과시키려고 `noise` 를 올리게 되고, 그러면
+    DoG 대역까지 같이 오염되어 **깨끗한 얼굴에서 병변이 쏟아진다.** 실제 피부는
+    질감은 많고 색 노이즈는 적다 — 그 동작점을 재현할 수 있어야 한다.
     """
     rng = np.random.default_rng(seed)
     h = w = CANONICAL_SIZE
@@ -119,8 +131,83 @@ def synthetic_face_linear(
         xx = np.linspace(0.85, 1.15, w)[None, :]
         lin *= (yy * xx)[..., None].astype(np.float32)
 
+    if texture > 0.0:
+        # 고역통과된 무채색 질감. sigma=1.5 아래(=모공 규모)만 남기므로 흐림 지표는
+        # 크게 올리면서 병변 대역(sigma>=3.6)에는 거의 기여하지 않는다.
+        fine = rng.normal(0.0, 1.0, (h, w)).astype(np.float32)
+        blurred, _ = measure.normalized_blur(fine, np.ones((h, w), dtype=bool), 1.5)
+        fine = fine - blurred
+        scale = float(fine.std()) or 1.0
+        lin *= (1.0 + (texture / scale) * fine)[..., None].astype(np.float32)
+
     lin += rng.normal(0.0, noise, lin.shape).astype(np.float32)
     return np.clip(lin, 1e-3, 1.0)
+
+
+def linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+    """`color.srgb_to_linear` 의 정확한 역함수. 근사 감마(x**(1/2.2))가 아니다.
+
+    파이프라인 입력은 uint8 sRGB 다. 픽스처를 여기로 되돌려 보내야
+    `srgb_to_linear` 와 8bit 양자화까지 실제로 지나가는 경로가 검증된다.
+    """
+    x = np.clip(np.asarray(linear, dtype=np.float64), 0.0, 1.0)
+    return np.where(x <= 0.0031308, x * 12.92, 1.055 * np.power(x, 1.0 / 2.4) - 0.055)
+
+
+def to_uint8_srgb(linear: np.ndarray) -> np.ndarray:
+    """선형 반사율 -> uint8 sRGB. 파이프라인이 실제로 받는 형태."""
+    return np.clip(linear_to_srgb(linear) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def synthetic_observation(
+    linear: np.ndarray,
+    landmarks_xy: np.ndarray = None,
+    native_ipd_px: float = 450.0,
+    yaw_deg: float = 0.0,
+    pitch_deg: float = 0.0,
+    roll_deg: float = 0.0,
+    confidence: float = 0.99,
+    n_faces: int = 1,
+    frame_valid: np.ndarray = None,
+):
+    """선형 반사율 -> `FaceObservation`. **MediaPipe 없이 `pipeline.analyze()` 전 구간이 돈다.**
+
+    합성 픽스처는 이미 정규 프레임 규격(768x768, IPD=320)으로 만들어지므로 워프가
+    필요 없다. 따라서 `affine` 은 항등이고, `pipeline.lesions_to_original()` 왕복도
+    항등이어야 한다 — 그 자체가 검증 대상이다.
+
+    `native_ipd_px` 기본값 450 은 `lesion_min_ipd_px`(150)를 넉넉히 넘겨 병변 검출이
+    켜진 상태를 만든다. 저해상도 경로를 보려면 150 미만을 넣는다.
+    """
+    from skin_detector.face import FaceObservation
+
+    lm = synthetic_landmarks() if landmarks_xy is None else landmarks_xy
+    h, w = linear.shape[:2]
+    if frame_valid is None:
+        frame_valid = np.ones((h, w), dtype=bool)
+    face_poly = mask_mod.polygon_mask(lm[list(mask_mod.FACE_OVAL)], h, w)
+    return FaceObservation(
+        canonical_rgb=to_uint8_srgb(linear),
+        frame_valid=frame_valid,
+        landmarks=lm.astype(np.float32),
+        face_poly=face_poly,
+        affine=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64),
+        native_ipd_px=float(native_ipd_px),
+        yaw_deg=float(yaw_deg),
+        pitch_deg=float(pitch_deg),
+        roll_deg=float(roll_deg),
+        confidence=float(confidence),
+        n_faces=int(n_faces),
+    )
+
+
+def disc(cx: float, cy: float, radius: float, amount: float,
+         size: int = CANONICAL_SIZE) -> np.ndarray:
+    """가장자리가 부드러운 원판 진폭 맵. `inject()` 의 amount 인자로 쓴다."""
+    yy, xx = np.mgrid[0:size, 0:size]
+    r = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    return (amount * np.clip((radius - r) / max(radius * 0.35, 1.0), 0.0, 1.0)
+            ).astype(np.float32)
 
 
 @pytest.fixture(scope="session")

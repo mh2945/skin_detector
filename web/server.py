@@ -214,8 +214,9 @@ async def analyze(image: UploadFile = File(...),
 
     warnings: List[str] = []
     try:
-        cap_dir, meta, warnings = sio.ingest(tmp, STORE)
-        meta.capture_path = capture_path
+        # capture_path 는 반드시 ingest 에 넘긴다. 호출 뒤에 대입하면 capture.json 에는
+        # 기본값이 박히고, 그 파일은 불변이라 영구히 잘못된 기록이 남는다.
+        cap_dir, meta, warnings = sio.ingest(tmp, STORE, capture_path=capture_path)
         rgb, _ = sio.load_original(tmp)
     finally:
         tmp.unlink(missing_ok=True)

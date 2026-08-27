@@ -91,29 +91,51 @@ def test_blur_gate():
     assert not r.passed and r.reason == ReasonCode.BLURRY
 
 
-def test_overexposed_and_underexposed():
-    kw = base_kwargs()
-    bright = kw["linear"].copy()
+def _textured(mean_map, sigma=0.02, seed=0):
+    """평균 밝기 지도 + 고주파 질감.
+
+    **질감을 반드시 남겨야 한다.** 게이트 순서상 BLURRY 가 노출·조명 게이트보다
+    먼저 걸리므로, 평평한 이미지로는 뒤쪽 게이트에 도달조차 하지 못한다.
+    이름은 노출 게이트인데 실제로는 흐림 게이트를 검사하는 테스트가 되기 쉽다.
+    """
+    rng = np.random.default_rng(seed)
+    lin = np.asarray(mean_map, dtype=np.float32).copy()
+    lin += rng.normal(0.0, sigma, lin.shape).astype(np.float32)
+    return np.clip(lin, 0.002, 0.999)
+
+
+def test_overexposed_gate():
+    bright = np.full((N, N, 3), 0.28, dtype=np.float32)
     bright[40:210, 40:210] = 0.999
-    r = quality.evaluate(**base_kwargs(linear=bright))
+    r = quality.evaluate(**base_kwargs(linear=_textured(bright)))
+    assert not r.passed
     assert r.reason == ReasonCode.OVEREXPOSED
 
-    dark = kw["linear"].copy()
-    dark[40:210, 40:210] = 0.01
-    r = quality.evaluate(**base_kwargs(linear=dark))
-    assert r.reason in (ReasonCode.BLURRY, ReasonCode.UNDEREXPOSED)
+
+def test_underexposed_gate_is_actually_reachable():
+    """어두운 사진은 BLURRY 가 아니라 UNDEREXPOSED 로 보고돼야 한다.
+
+    안내 문장이 달라진다 — "삼각대를 쓰세요"와 "더 밝은 곳에서 찍으세요"는
+    사용자가 할 일이 완전히 다르다. 질감이 살아 있는 어두운 사진으로 검사한다.
+    """
+    dark = np.full((N, N, 3), 0.28, dtype=np.float32)
+    dark[40:210, 40:210] = 0.03
+    r = quality.evaluate(**base_kwargs(linear=_textured(dark, sigma=0.02)))
+    assert not r.passed
+    assert r.reason == ReasonCode.UNDEREXPOSED, r.metrics
 
 
 def test_non_uniform_illumination_gate():
     """세로 프레임의 천장 조명 구배. 계획 §2.5 에서 '그만큼 더 중요하다'고 표시한 게이트."""
-    kw = base_kwargs()
-    lin = kw["linear"].copy()
-    ramp = np.linspace(0.06, 0.85, N)[:, None, None].astype(np.float32)
-    lin = np.clip(lin * 0 + ramp + kw["linear"] * 0.05, 0.01, 0.95)
-    r = quality.evaluate(**base_kwargs(linear=lin))
+    # 측면광: 얼굴 **안에서** 밝기가 크게 벌어져야 P90/P10 이 올라간다.
+    # 프레임 전체에 램프를 걸면 얼굴이 램프의 가운데만 덮어 비율이 희석된다.
+    lin = np.full((N, N, 3), 0.5, dtype=np.float32)
+    grad = np.linspace(0.12, 0.95, 210 - 40).astype(np.float32)
+    lin[40:210, 40:210] = grad[None, :, None]
+    r = quality.evaluate(**base_kwargs(linear=_textured(lin)))
     assert not r.passed
-    assert r.reason in (ReasonCode.BLURRY, ReasonCode.NON_UNIFORM_ILLUMINATION,
-                        ReasonCode.OVEREXPOSED)
+    assert r.reason == ReasonCode.NON_UNIFORM_ILLUMINATION, r.metrics
+    assert r.metrics["illum_ratio"] > 4.0
 
 
 def test_metrics_are_recorded_even_on_pass():
