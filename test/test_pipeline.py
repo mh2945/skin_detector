@@ -5,7 +5,7 @@
 
 MediaPipe 는 쓰지 않는다. 합성 픽스처가 이미 정규 프레임 규격이므로
 `conftest.synthetic_observation()` 이 `FaceObservation` 을 직접 만들어 준다 —
-셀피 없이 도는 테스트라는 성질(`test/CLAUDE.md`)을 그대로 유지한다.
+셀피 한 장 없이 전 구간이 돈다는 이 저장소의 성질을 그대로 유지한다.
 
 ## 동작점에 대하여
 
@@ -217,7 +217,8 @@ def test_multiple_faces_is_rejected(cfg_pair):
 def test_lesions_to_original_is_identity_for_identity_affine(cfg_pair):
     """합성 관측의 affine 은 항등이므로 역변환도 항등이어야 한다.
 
-    오버레이가 어긋나는 버그는 대부분 이 왕복에서 나온다 (`src/.../CLAUDE.md`).
+    오버레이가 어긋나는 버그는 대부분 이 왕복에서 나온다. 정규 프레임과 원본,
+    좌표계가 둘인데 규약이 없으면 언젠가 반드시 섞인다.
     """
     base = synthetic_face_linear(**CLEAN)
     blob = disc(SUBJECT_RIGHT_CHEEK[0], SUBJECT_RIGHT_CHEEK[1], 7.0, 0.05)
