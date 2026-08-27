@@ -1,0 +1,73 @@
+# 모든 임계값의 단일 출처 (docs/CONTRACT.md 5번).
+#
+# 코드에 매직 넘버를 두지 않는다. `src/skin_detector/core/config.py` 의 dataclass
+# 기본값은 이 파일과 **같아야 하고**, `test/test_contract.py` 가 그걸 검사한다.
+#
+# 튜닝은 이 파일만 고치면 된다. 고친 내용은 결과 JSON 의 `config_hash` 로 남아
+# "어떤 설정에서 나온 숫자인지"가 항상 추적된다 (계획 §5.4 ②).
+
+[quality]
+# 먼저 걸리는 게이트가 이긴다. 순서는 core/quality.py 가 정한다.
+min_native_ipd_px = 90.0          # 원본 IPD. 이보다 작으면 분석 자체를 거부
+lesion_min_ipd_px = 150.0         # 이보다 작으면 병변만 끄고 미만성은 보고한다
+max_yaw_deg = 20.0
+max_pitch_deg = 20.0
+max_roll_deg = 25.0
+min_landmark_confidence = 0.5
+min_blur_vol = 60.0               # 정규 프레임에서의 Laplacian 분산 (8bit 스케일)
+clip_level = 0.9803921568627451   # 250/255. 이 위는 포화 -> 채널 비율이 무의미
+dark_level = 0.09803921568627451  # 25/255. 이 아래는 로그 비율 분산이 폭발
+max_clipped_fraction = 0.05
+max_dark_fraction = 0.30
+max_illum_ratio = 4.0             # P90(Y)/P10(Y). 세로 프레임 천장 조명 구배를 잡는다
+min_face_in_frame = 0.90          # 9:16 크롭이 프레임 밖으로 나간 비율의 허용치
+
+[mask]
+# 전부 IPD 대비 비율이라 해상도가 달라져도 자동으로 맞는다.
+face_erode_frac = 0.03            # 머리카락/배경 누출 차단
+exclusion_dilate_frac = 0.02      # 눈·눈썹·입술 주변 여유
+edge_band_frac = 0.03             # DoG 가 스텝 에지에서 터지는 것을 막는 밴드
+forehead_up_frac = 0.60
+nose_half_width_frac = 0.20
+cheek_inner_gap_frac = 0.18
+mahalanobis_max = 3.0             # (e,m) 평면 색도 게이트. 얼굴 자체에서 학습한다.
+chroma_min_sigma = 0.03           # 색도 분포 표준편차 하한.
+                                  # 없으면 균일한 얼굴에서 게이트가 병변 자체를 잘라낸다.
+specular_mad_k = 3.0              # min(R,G,B) 가 이만큼 튀면 정반사
+
+[baseline]
+# 이 프로젝트에서 가장 민감한 값들. Phase 1 에서 percentile 을 비교 평가한다.
+percentile = 25.0                 # b_face = P25(ERI)
+tau_k = 2.0                       # tau = k * sigma_face (MAD 기반)
+b_alt_delta_max = 0.02            # |b_face - b_alt| 초과 시 조명 구배 플래그
+min_ref_regions = 2               # 미만이면 '통과'가 아니라 '확인 불가'
+min_coverage = 0.5                # 미만이면 그 부위 점수는 null (0 이 아니다)
+melanin_trim = 0.2
+melanin_iters = 5
+# 멜라닌 회귀 제약. 없으면 회귀가 홍반을 '멜라닌'으로 오인해 빼버린다.
+melanin_fit_sigma_frac = 0.08     # 적합 전 저역통과 (G 채널 공유 노이즈가 만드는
+                                  # 가짜 기울기 beta ~= -0.5 를 없앤다)
+melanin_beta_min = 0.0            # 멜라닌은 e 와 m 을 같은 방향으로 움직인다.
+melanin_beta_max = 0.6            # 음수 beta 는 물리적으로 멜라닌일 수 없다.
+
+[lesion]
+# sigma 는 정규 IPD 320 기준 px. 1mm = 5.08px, 구진 2~5mm -> sigma 3.6~9.0
+sigma_min_px = 3.6
+sigma_ratio = 1.36
+n_scales = 4
+peak_min_d = 0.012
+nms_radius_frac = 0.025
+anisotropy_max = 3.0              # 구조 텐서 l1/l2. 구진은 등방성, 수염은 길쭉하다.
+melanin_reject_ratio = 1.0        # 부호 있는 dm 이 이 배수를 넘으면 모반.
+                                  # 헤모글로빈은 dm<0 이라 절대 안 걸린다 (|dm| 로 비교하면 걸린다).
+darkness_reject_dl = -8.0         # 국소 dL* 가 이보다 어두우면 색소 병변
+max_lesions = 200
+
+[score]
+lowpass_sigma_frac = 0.25         # 미만성 저역통과 sigma (IPD 대비)
+w_area = 0.6
+w_intensity = 0.4
+area_x0 = 0.15
+intensity_x0 = 0.03
+erythema_area_threshold = 0.12    # 이 이상이면 그 부위는 '붉음' (§7.2 붉은기 축)
+lesion_count_threshold = 1        # 이 이상이면 그 부위는 '트러블 있음' (§7.2 트러블 축)

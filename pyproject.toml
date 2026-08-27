@@ -1,0 +1,28 @@
+[project]
+name = "skin-detector"
+version = "0.1.0"
+description = "얼굴 붉은기 · 트러블 검출기 (룰 기반)"
+requires-python = ">=3.9,<3.13"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "mediapipe>=0.10.18",
+    "pillow>=10",
+    "pillow-heif>=0.13",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "python-multipart>=0.0.9"]
+dev = ["pytest>=7", "httpx2"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["src", "test", "."]
+filterwarnings = ["ignore::DeprecationWarning"]

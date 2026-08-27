@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>얼굴 붉은기 · 트러블 측정</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>얼굴 붉은기 · 트러블 측정</h1>
+  <p class="sub">사진은 이 컴퓨터 밖으로 나가지 않습니다.</p>
+</header>
+
+<!-- [1] 촬영 안내 ------------------------------------------------------- -->
+<section id="step-guide" class="card">
+  <h2><span class="step">1</span> 촬영 전 확인</h2>
+  <ul class="check">
+    <li><b>정면 조명</b> — 창을 마주 보거나 조명을 얼굴 정면에 둡니다. 측면광은 그림자를 붉은기로 오인하게 만듭니다.</li>
+    <li><b>HDR · 뷰티보정 · 야간모드 끄기</b> — 켜져 있으면 색이 가공되어 측정이 성립하지 않습니다.</li>
+    <li><b>거치대에 고정</b> — 흔들리면 작은 트러블이 사라집니다.</li>
+    <li><b>정면을 보고, 앞머리는 넘기기</b> — 이마가 가려지면 이마는 측정하지 못합니다.</li>
+    <li><b>촬영 10분 전부터 안정</b> — 운동·음주·세안 직후에는 얼굴이 실제로 붉습니다.</li>
+  </ul>
+</section>
+
+<!-- [2] 캡처 ------------------------------------------------------------ -->
+<section id="step-capture" class="card">
+  <h2><span class="step">2</span> 촬영 또는 업로드</h2>
+
+  <div class="paths">
+    <div class="path">
+      <h3>A. 간편 — 브라우저로 촬영</h3>
+      <p class="note">화이트밸런스·감도를 고정할 수 없어 <b>정확도가 낮습니다.</b>
+         경향을 보는 용도입니다.</p>
+      <video id="preview" playsinline muted></video>
+      <div class="row">
+        <button id="btn-cam">카메라 켜기</button>
+        <button id="btn-shot" disabled>촬영</button>
+      </div>
+    </div>
+
+    <div class="path">
+      <h3>B. 정확 — 카메라 앱으로 찍어 업로드</h3>
+      <p class="note">수동 카메라 앱에서 <b>WB 켈빈 · ISO · 셔터를 고정</b>하고 찍은 사진을
+         올리면 가장 정확합니다. 측정 성능은 이 경로 기준입니다.</p>
+      <p class="filename">파일명 규약(선택):
+         <code>세션_조명_WB_ISO_torch_번호.heic</code><br>
+         예 <code>s01_window_5500_100_torch_1.heic</code></p>
+      <input type="file" id="file" accept="image/*">
+    </div>
+  </div>
+  <div id="busy" class="busy" hidden>분석 중…</div>
+</section>
+
+<!-- [3][4] 결과 --------------------------------------------------------- -->
+<section id="step-result" class="card" hidden>
+  <h2><span class="step">3</span> 결과</h2>
+
+  <div id="gate" class="gate" hidden>
+    <h3 id="gate-title"></h3>
+    <p id="gate-how"></p>
+    <button id="btn-retry">다시 촬영</button>
+  </div>
+
+  <div id="result" hidden>
+    <div class="result-grid">
+      <figure>
+        <img id="overlay" alt="분석 오버레이">
+        <figcaption>붉은 부분이 기준선보다 붉게 측정된 영역입니다.
+          노란 원은 개별 트러블 후보입니다.</figcaption>
+      </figure>
+      <div id="regions"></div>
+    </div>
+
+    <div id="notes"></div>
+
+    <details id="detail">
+      <summary>측정 근거 자세히 보기</summary>
+      <div id="detail-body"></div>
+    </details>
+
+    <!-- [5] 피드백 -->
+    <div class="feedback">
+      <span>이 결과가 맞나요?</span>
+      <button data-v="correct">맞음</button>
+      <button data-v="over_detected">과검출</button>
+      <button data-v="missed">놓침</button>
+      <span id="fb-done" class="done" hidden>기록했습니다. 고맙습니다.</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>이 도구는 <b>의료기기가 아니며 진단을 제공하지 않습니다.</b>
+     색만으로는 주사·지루피부염·접촉피부염을 구분할 수 없습니다.
+     피부 증상이 걱정되면 피부과 전문의와 상담하세요.</p>
+  <p id="version" class="dim"></p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

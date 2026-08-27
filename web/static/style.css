@@ -1,0 +1,122 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #1c2024;
+  --dim: #6b7280;
+  --line: #e3e6ea;
+  --accent: #2563eb;
+  --hot: #dc2626;
+  --warn: #b45309;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151a; --card: #1b1f26; --ink: #e6e9ee; --dim: #9aa3af;
+    --line: #2a3039; --accent: #60a5fa; --hot: #f87171; --warn: #fbbf24;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; padding: 0 16px 48px;
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  max-width: 1000px; margin-inline: auto;
+}
+
+header { padding: 28px 0 8px; }
+h1 { margin: 0; font-size: 22px; }
+.sub { margin: 4px 0 0; color: var(--dim); font-size: 13px; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 20px; margin: 16px 0;
+}
+h2 { margin: 0 0 14px; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+h3 { margin: 0 0 6px; font-size: 15px; }
+
+.step {
+  display: inline-grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 12px;
+}
+
+.check { margin: 0; padding-left: 20px; }
+.check li { margin-bottom: 6px; }
+
+.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 720px) { .paths { grid-template-columns: 1fr; } }
+.path { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+
+.note { color: var(--dim); font-size: 13px; margin: 4px 0 10px; }
+.filename { font-size: 12px; color: var(--dim); }
+code { background: rgba(127,127,127,.14); padding: 1px 5px; border-radius: 4px;
+       font-size: 12px; }
+
+video { width: 100%; border-radius: 8px; background: #000; aspect-ratio: 3/4;
+        object-fit: cover; }
+.row { display: flex; gap: 8px; margin-top: 10px; }
+
+button {
+  font: inherit; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+
+input[type=file] { width: 100%; font: inherit; }
+.busy { margin-top: 14px; color: var(--accent); }
+
+/* 게이트 — 점수 대신 재촬영 안내가 나간다 */
+.gate {
+  border-left: 4px solid var(--warn); padding: 14px 16px;
+  background: rgba(180, 83, 9, .08); border-radius: 8px;
+}
+.gate h3 { color: var(--warn); }
+
+.result-grid { display: grid; grid-template-columns: 380px 1fr; gap: 20px; }
+@media (max-width: 800px) { .result-grid { grid-template-columns: 1fr; } }
+figure { margin: 0; }
+figure img { width: 100%; border-radius: 10px; display: block; }
+figcaption { font-size: 12px; color: var(--dim); margin-top: 6px; }
+
+#regions { display: grid; gap: 8px; align-content: start; }
+.region {
+  display: grid; grid-template-columns: 90px 60px 1fr; align-items: center;
+  gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.region.hot { border-color: var(--hot); }
+.region.unmeasured { grid-template-columns: 90px 1fr; opacity: .85; }
+.rname { font-weight: 600; }
+.rscore { font-size: 22px; font-variant-numeric: tabular-nums; }
+.region.unmeasured .rscore { font-size: 14px; color: var(--dim); }
+.rverdict, .rwhy { font-size: 13px; }
+.region.hot .rverdict { color: var(--hot); }
+
+.note-box {
+  margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+  background: rgba(127,127,127,.10); font-size: 13px;
+}
+.note-box.warn { border-left: 3px solid var(--warn); }
+
+details { margin-top: 16px; }
+summary { cursor: pointer; font-size: 14px; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+.kv { font-size: 13px; padding-left: 18px; }
+.kv li { margin-bottom: 3px; }
+
+.feedback {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.done { color: var(--accent); font-size: 13px; }
+.dim { color: var(--dim); }
+
+footer { margin-top: 24px; font-size: 12px; color: var(--dim); }
+footer b { color: var(--ink); }
