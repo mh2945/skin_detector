@@ -241,17 +241,28 @@ def load_extinction_csv(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 # ── 불변 원시 레이어 (§5.4) ───────────────────────────────────────────
 
-def ingest(src: Path, store: Path) -> Tuple[Path, CaptureMeta, List[str]]:
+def ingest(src: Path, store: Path,
+           capture_path: str = "upload") -> Tuple[Path, CaptureMeta, List[str]]:
     """원본을 `data/store/<capture_id>/` 규약으로 편입한다.
 
     원본과 capture.json 은 **한 번 쓰고 수정하지 않는다** (계약 10번).
     이미 있으면 덮어쓰지 않고 그대로 둔다 — 재편입은 멱등이다.
 
+    `capture_path` 는 **capture.json 을 쓰기 전에** 반영되어야 한다. 호출한 뒤에
+    `meta.capture_path` 를 바꿔봐야 메모리 객체만 바뀌고 디스크에는 기본값이 박힌다.
+    그렇게 되면 브라우저 캡처(경로 A)가 업로드(경로 B)로 기록되고, capture.json 은
+    불변이라 되돌릴 수도 없다 — `validate.py` 의 upload 전용 필터가 조용히 오염되어
+    `docs/VALIDATION.md` §0 이 금지한 두 모집단 혼입이 그대로 일어난다.
+
     Returns:
         (capture_dir, meta, warnings)
     """
     src = Path(src)
+    if capture_path not in ("browser", "upload"):
+        raise ValueError("capture_path 는 browser 또는 upload 여야 한다: "
+                         + repr(capture_path))
     _rgb, meta = load_original(src)
+    meta.capture_path = capture_path
     warnings: List[str] = []
     if not meta.filename_parsed:
         warnings.append(
@@ -259,6 +270,20 @@ def ingest(src: Path, store: Path) -> Tuple[Path, CaptureMeta, List[str]]:
             "검증 데이터로 쓰면 오염된다".format(src.name))
 
     cap_dir = Path(store) / meta.capture_id
+    if not cap_dir.exists():
+        # 같은 사진이 다른 타임스탬프로 이미 들어와 있으면 **그 디렉터리를 쓴다.**
+        #
+        # capture_id 의 시각 부분은 EXIF `DateTimeOriginal` 이 없으면 파일 mtime 에서
+        # 온다. mtime 은 사진의 성질이 아니라 파일의 성질이라, 같은 사진을 다시
+        # 올리면 시각만 달라져 **별도 캡처로 쌓인다.** 브라우저 캡처(EXIF 없는 PNG)가
+        # 정확히 이 경우고, 그러면 store 에 중복이 생겨 검증 통계가 이중 계산된다.
+        #
+        # 내용 해시는 그대로이므로 그것으로 찾는다. id 형식은 바뀌지 않는다.
+        content_hash = meta.capture_id.rsplit("_", 1)[-1]
+        existing = sorted(Path(store).glob("*_" + content_hash))
+        if existing:
+            cap_dir = existing[0]
+            meta.capture_id = cap_dir.name
     cap_dir.mkdir(parents=True, exist_ok=True)
     (cap_dir / "results").mkdir(exist_ok=True)
 
@@ -274,6 +299,11 @@ def ingest(src: Path, store: Path) -> Tuple[Path, CaptureMeta, List[str]]:
             encoding="utf-8")
     else:
         meta = read_capture_meta(cap_dir)
+        if meta.capture_path != capture_path:
+            # 같은 사진을 다른 경로로 다시 넣었다. 기록은 최초 것이 이긴다(불변).
+            warnings.append(
+                "이미 {} 경로로 편입된 사진이다: {} — 이번 요청({})은 무시된다"
+                .format(meta.capture_path, src.name, capture_path))
 
     return cap_dir, meta, warnings
 

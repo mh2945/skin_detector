@@ -23,6 +23,11 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _console import setup_console  # noqa: E402
+
+setup_console()          # cp949 리다이렉트에서 죽지 않게 한다. import 직후여야 한다.
 
 from skin_detector import face as face_mod, imageio as sio, pipeline  # noqa: E402
 from skin_detector.core import color, measure  # noqa: E402
@@ -417,7 +422,9 @@ def cmd_synth(args) -> int:
     ok = (0.7 <= slope / expected <= 1.3) and r2 >= 0.9
     print("PASS 조건(§7.2): 상대기울기 0.7~1.3 이고 R^2 >= 0.9  ->  {}".format(
         "충족" if ok else "미충족"))
-    return 0
+    # **판정을 종료 코드로 내보낸다.** 예전에는 여기서 ok 를 계산해 놓고 버려서
+    # 선형성이 깨져도 프로세스가 0 으로 끝났다 — CI 가 게이트로 쓸 수 없었다.
+    return 0 if ok else 2
 
 
 # ── negative ─────────────────────────────────────────────────────────

@@ -2,7 +2,8 @@
 name = "skin-detector"
 version = "0.1.0"
 description = "얼굴 붉은기 · 트러블 검출기 (룰 기반)"
-requires-python = ">=3.9,<3.13"
+# tomllib(imageio.py)이 stdlib 에 들어온 것이 3.11 이다. 3.9/3.10 에서는 import 부터 실패한다.
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "numpy>=1.24",
     "opencv-python>=4.8",
@@ -13,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "python-multipart>=0.0.9"]
-dev = ["pytest>=7", "httpx2"]
+dev = ["pytest>=7", "pytest-cov>=5", "httpx2"]
 
 [build-system]
 requires = ["setuptools>=68"]

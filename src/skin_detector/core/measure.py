@@ -364,7 +364,29 @@ def detect_lesions(
     best = stack.max(axis=0)
     best_k = stack.argmax(axis=0)
 
-    cand = _local_maxima(best) & skin & (best > cfg.peak_min_d)
+    # 임계값은 **절대 하한과 잡음 상대 하한 중 큰 쪽**이다.
+    #
+    # `peak_min_d` 만 쓰면 잡음이 조금만 늘어도 후보가 폭증한다. DoG 는 정합 이득
+    # 0.149 로 나누므로 잡음도 6.7배 증폭된다. 실측: 색 노이즈 0.010(흐림 게이트를
+    # 겨우 통과하는 수준)에서 깨끗한 피부에 24~38개가 잡혔다.
+    #
+    # 잡음을 재는 모집단은 **극대점들**이지 화소 전체가 아니다. 후보가 되는 것은
+    # 극대점뿐이고, 극대점 값은 주변 최대값이라 화소 분포보다 계통적으로 높다.
+    # 화소 전체의 sigma 로 임계를 잡으면 항상 과소평가된다 (실측: 5 sigma 를 잡아도
+    # 절대 하한 아래로 내려가 아무 효과가 없었다).
+    #
+    # 극대점은 얼굴당 ~1050개로 잡음 수준과 무관하게 거의 일정하다. 병변은 그 중
+    # 소수라 median 과 MAD 를 흔들지 못하므로, 병변이 있는 얼굴에서도 이 추정은
+    # 잡음 추정으로 유효하다. **단, 병변이 극단적으로 많은 얼굴에서는 임계가 올라가
+    # 검출이 보수적으로 변한다** — 오검출보다 미검출이 낫다는 선택이다.
+    lm_mask = _local_maxima(best) & skin
+    peaks = best[lm_mask]
+    noise_floor = 0.0
+    if peaks.size >= 32:
+        noise_floor = float(np.median(peaks)) + cfg.peak_min_k * robust_sigma(peaks)
+    peak_min = max(cfg.peak_min_d, noise_floor)
+
+    cand = lm_mask & (best > peak_min)
     ys, xs = np.nonzero(cand)
     if ys.size == 0:
         return [], {}
@@ -462,6 +484,47 @@ def _norm(x: float, x0: float) -> float:
     return 1.0 - math.exp(-max(0.0, x) / x0)
 
 
+def region_noise_scale(
+    lesion_band: np.ndarray,
+    skin: np.ndarray,
+    masks_by_region: Dict[RegionId, np.ndarray],
+    clamp: float,
+) -> Dict[RegionId, float]:
+    """부위별 잡음 수준을 **경험적으로** 재서 얼굴 평균 대비 비율로 돌려준다.
+
+    왜 필요한가 — `area_fraction = mean(d > tau)` 는 **산포 통계**인데 `tau` 는
+    얼굴 전체에서 한 번 정해지는 **전역** 값이다. 로그 비율은 음영을 평균에서
+    정확히 소거하지만(측정: 부위별 mean(d) 가 5자리까지 동일) **분산은 소거하지
+    않는다** — 어두운 부위일수록 d 의 산포가 넓어진다 (측정: std(d) 가 밝기에
+    반비례, 이마 0.00878 vs 턱 0.00665).
+
+    그래서 전역 tau 를 쓰면 **그늘진 부위가 자동으로 '붉게' 나온다.** 색소가 완전히
+    균일한 합성 얼굴에서 이마가 항상 '붉음'으로 판정되던 원인이 이것이다.
+
+    잡음 수준은 모델링하지 않고 **고주파 대역에서 직접 잰다.** 깨끗한 피부에서
+    `lesion_band` 는 사실상 순수 잡음이라 그 robust sigma 가 곧 국소 잡음 추정치다.
+    센서 모델(샷 노이즈냐 리드 노이즈냐)을 맞출 필요가 없다는 것이 이 방식의 장점이다.
+    `snr_weights` 로 가중해 보는 방법도 시도했지만 그 모델은 샷 노이즈 형태(var∝1/r)라
+    효과가 없었다 — 실측 산포는 리드 노이즈 형태(var∝1/r²)에 가까웠다.
+
+    조명이 평탄하면 모든 비율이 1.0 이 되어 **이 보정은 자동으로 무력화된다.**
+    """
+    face_sigma = robust_sigma(lesion_band[skin])
+    out: Dict[RegionId, float] = {}
+    for r in ALL_REGIONS:
+        mask = masks_by_region.get(r)
+        if mask is None or face_sigma <= 0.0:
+            out[r] = 1.0
+            continue
+        local = robust_sigma(lesion_band[mask])
+        if local <= 0.0:
+            out[r] = 1.0
+            continue
+        lo = 1.0 / clamp if clamp > 0 else 1.0
+        out[r] = float(min(max(local / face_sigma, lo), clamp if clamp > 0 else 1.0))
+    return out
+
+
 def score_regions(
     d: np.ndarray,
     masks_by_region: Dict[RegionId, np.ndarray],
@@ -472,11 +535,15 @@ def score_regions(
     min_coverage: float,
     lesion_enabled: bool,
     forehead_occluded_reason: ReasonCode = ReasonCode.LOW_COVERAGE,
+    noise_scale: Optional[Dict[RegionId, float]] = None,
 ) -> List[RegionScore]:
     """부위별 정량값 + §7.2 2단계 판정.
 
     coverage 가 모자라면 점수를 **null 로 두고 사유를 남긴다.** 0 을 반환하면
     "측정 못 함"이 "정상"으로 둔갑한다 — 계약 4번.
+
+    `noise_scale` 을 주면 부위별 tau 를 그 비율로 조정한다 (`region_noise_scale`).
+    주지 않으면 전역 tau 를 그대로 쓴다 — 기존 동작.
     """
     lesion_count: Dict[RegionId, int] = {}
     for les in lesions:
@@ -495,7 +562,8 @@ def score_regions(
             continue
 
         vals = d[mask]
-        hot = vals > baseline.tau
+        tau_r = baseline.tau * float((noise_scale or {}).get(r, 1.0))
+        hot = vals > tau_r
         area = float(hot.mean())
         intensity = float(vals[hot].mean()) if bool(hot.any()) else 0.0
         median_d = float(np.median(vals))

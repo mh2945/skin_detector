@@ -84,7 +84,8 @@ class LesionConfig:
     sigma_min_px: float = 3.6            # 2mm 구진 (1mm = 5.08px, r/sqrt(2))
     sigma_ratio: float = 1.36
     n_scales: int = 4                    # -> 3.6, 4.9, 6.6, 9.0
-    peak_min_d: float = 0.012            # 이 아래 피크는 노이즈로 본다
+    peak_min_d: float = 0.012            # 절대 하한 (d 와 같은 log10 단위)
+    peak_min_k: float = 6.0              # 잡음 상대 하한 = median + k*sigma (극대점 분포)            # 이 아래 피크는 노이즈로 본다
     nms_radius_frac: float = 0.025       # IPD 대비 비최대 억제 반경
     anisotropy_max: float = 3.0          # 구조 텐서 l1/l2. 구진은 등방성, 수염은 길쭉하다.
     melanin_reject_ratio: float = 1.0    # **부호 있는** dm 이 이 배수를 넘으면 모반 -> 기각.
@@ -104,6 +105,7 @@ class ScoreConfig:
     intensity_x0: float = 0.030
     erythema_area_threshold: float = 0.12   # 이 이상이면 그 부위는 '붉음'
     lesion_count_threshold: int = 1         # 이 이상이면 그 부위는 '트러블 있음'
+    local_tau_clamp: float = 2.0            # 부위별 tau 보정 비율의 상한(하한은 역수)
 
 
 @dataclass

@@ -73,10 +73,31 @@ def test_chromaticity_gate_rejects_off_distribution():
 
 
 def test_chromaticity_gate_degrades_with_tiny_seed():
+    """시드가 너무 작아도 **피부를 통째로 잘라내면 안 된다.**
+
+    shape 만 단언하면 구조적으로 보장된 값이라 절대 실패하지 않는다. 실제로
+    지켜야 할 성질은 '공분산 추정이 무너져도 게이트가 전부 False 가 되지 않는다'는
+    것이다 — 그래서 `chroma_min_sigma` 하한이 존재한다.
+    """
     e = np.zeros((16, 16)); m = np.zeros((16, 16))
     seed = np.zeros((16, 16), dtype=bool)
     seed[0, 0] = True
-    assert M.chromaticity_gate(e, m, seed, 3.0).shape == (16, 16)
+    ok = M.chromaticity_gate(e, m, seed, 3.0)
+    assert ok.shape == (16, 16)
+    assert ok.all(), "균일한 색도면에서는 아무것도 기각하면 안 된다"
+
+
+def test_chromaticity_gate_survives_a_degenerate_seed():
+    """시드 분산이 0 에 가까워도 진짜 병변을 잘라내지 않는다.
+
+    `chroma_min_sigma` 하한이 없으면 균일한 얼굴에서 주입한 병변이 전부
+    `skin=False` 가 되어 사라진다 — 실제로 겪은 실패다.
+    """
+    e = np.zeros((64, 64)); m = np.zeros((64, 64))
+    e[30:34, 30:34] = 0.02          # 아주 작은 병변
+    seed = np.ones((64, 64), dtype=bool)
+    ok = M.chromaticity_gate(e, m, seed, 3.0, min_sigma=0.03)
+    assert ok[30:34, 30:34].all(), "병변이 색도 게이트에 잘려 나갔다"
 
 
 # ── 정반사 ────────────────────────────────────────────────────────────

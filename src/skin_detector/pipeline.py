@@ -187,6 +187,12 @@ def analyze(
     forehead_reason = (ReasonCode.FOREHEAD_OCCLUDED
                        if coverage[RegionId.FOREHEAD] < cfg.baseline.min_coverage
                        else ReasonCode.OK)
+    # 부위별 잡음을 고주파 대역에서 직접 재서 tau 를 보정한다. 안 하면 그늘진 부위가
+    # 색소와 무관하게 '붉음'으로 나온다 — `measure.region_noise_scale` 참조.
+    noise_scale = measure.region_noise_scale(
+        lesion_band=lesion_band, skin=skin,
+        masks_by_region=masks.regions, clamp=cfg.score.local_tau_clamp,
+    )
     regions = measure.score_regions(
         d=d,
         masks_by_region=masks.regions,
@@ -197,6 +203,7 @@ def analyze(
         min_coverage=cfg.baseline.min_coverage,
         lesion_enabled=lesion_enabled,
         forehead_occluded_reason=forehead_reason,
+        noise_scale=noise_scale,
     )
 
     # 조명 구배 교차검증 — 참조 부위가 2개 미만이면 '통과'가 아니라 '확인 불가'다.

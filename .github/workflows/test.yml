@@ -1,0 +1,85 @@
+# 검증 게이트. 사진 없이 도는 것만 여기서 돌린다.
+#
+# 실사진 검증(validate.py stability / agreement)은 data/store 가 필요하고
+# 그건 개인정보라 저장소에 없다. CI 가 할 수 있는 것은 "코드가 무너지지 않았는가"까지다.
+# 성능 주장은 여기서 나오지 않는다 (docs/LIMITS.md).
+
+name: test
+
+on:
+  # 브랜치를 main 으로 한정하지 않는다. 작업 브랜치에서 PR 을 열기 전에
+  # 결과를 봐야 CI 가 쓸모가 있다.
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 같은 브랜치에 연달아 푸시하면 이전 실행을 취소한다. push 와 pull_request 가
+# 겹쳐 도는 낭비도 여기서 줄어든다.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # 이 프로젝트의 배포 대상이 Windows 다. 인코딩·경로 함정이 여기서만 드러난다.
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        # 명시한다. 아래 스텝들이 PowerShell 문법(foreach, $LASTEXITCODE, throw)을 쓴다.
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # pyproject 의 requires-python 하한과 같아야 한다 (tomllib = 3.11+).
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성
+        # 선언은 pyproject 한 곳에서만 읽는다. setup_env.ps1 과의 일치는
+        # test_contract.py::test_setup_script_installs_what_pyproject_declares 가 지킨다.
+        run: python -m pip install -e ".[web,dev]"
+
+      - name: 랜드마커 모델
+        # models/ 는 gitignore 라 체크아웃에 없다. 없으면 스크립트 4개가 전부 죽는데
+        # pytest 는 그대로 통과하므로, 받아 두지 않으면 그 차이를 CI 가 못 본다.
+        run: |
+          New-Item -ItemType Directory -Force models | Out-Null
+          Invoke-WebRequest -Uri "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" -OutFile "models/face_landmarker.task"
+
+      - name: 테스트 + 커버리지
+        run: >
+          python -m pytest -q
+          --cov=src/skin_detector --cov=web
+          --cov-report=term-missing --cov-fail-under=80
+
+      - name: 스크립트 스모크 (cp949 리다이렉트)
+        # **리다이렉트된 출력**에서만 로케일 폴백이 일어난다. 한국어 Windows 의
+        # cp949 를 강제해, em-dash 하나로 검증 게이트가 죽던 회귀를 다시 잡는다.
+        env:
+          PYTHONIOENCODING: cp949
+        run: |
+          foreach ($s in "analyze","validate","reprocess","tune") {
+            python "scripts/$s.py" --help *> $null
+            if ($LASTEXITCODE -ne 0) { throw "scripts/$s.py --help exit=$LASTEXITCODE" }
+          }
+          python scripts/validate.py stability *> $null
+          # store 가 비었으므로 1(데이터 없음)이 정상이다. 크래시면 다른 코드가 나온다.
+          if ($LASTEXITCODE -ne 1) { throw "validate.py stability exit=$LASTEXITCODE" }
+          # PowerShell 은 if 로 검사해도 $LASTEXITCODE 를 초기화하지 않고,
+          # Actions 는 블록 끝에 `exit $LASTEXITCODE` 를 붙인다. 명시적으로 0 을 내지
+          # 않으면 **검사가 전부 통과해도 스텝이 1 로 실패한다.**
+          exit 0
+
+      - name: 합성 복원 선형성
+        # 유일하게 데이터 없이 판정이 나오는 검증. 종료 코드로 게이트한다.
+        #   0 = 선형성 충족, 1 = store 비어 판정 불가(CI 의 정상 상태), 2 = 미충족
+        run: |
+          python scripts/validate.py synth
+          $code = $LASTEXITCODE
+          if ($code -eq 2) { throw "합성 Delta 복원 선형성 미충족" }
+          if ($code -notin @(0, 1)) { throw "validate.py synth 예상 밖 exit=$code" }
+          exit 0

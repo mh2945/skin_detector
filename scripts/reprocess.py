@@ -16,6 +16,11 @@ from typing import Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _console import setup_console  # noqa: E402
+
+setup_console()          # cp949 리다이렉트에서 죽지 않게 한다. import 직후여야 한다.
 
 from skin_detector import imageio as sio, pipeline  # noqa: E402
 from skin_detector.core.types import ALL_REGIONS  # noqa: E402
