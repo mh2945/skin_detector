@@ -1,0 +1,24 @@
+# ── 얼굴 사진 · 개인정보 ─────────────────────────────────────
+# data/store 는 원본 셀피가 쌓이는 곳이다. 절대 커밋하지 않는다.
+data/store/
+data/incoming/
+data/synthetic/
+data/panel_ratings.csv
+
+# ── 대용량 자산 ──────────────────────────────────────────────
+models/
+model/
+out/
+
+# ── Python ──────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── 편집기 · OS ─────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
