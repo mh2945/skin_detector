@@ -5,7 +5,7 @@
 **신규 의존성은 없다.** FastAPI `TestClient` 가 이미 설치된 환경에서 동작한다.
 
 store 는 반드시 `tmp_path` 로 갈아끼운다 — 테스트가 사용자의 실제
-`data/store/` 에 사진을 쌓으면 안 된다 (`data/CLAUDE.md` 불변 원시 레이어).
+`data/store/` 에 사진을 쌓으면 안 된다 — 그곳은 불변 원시 레이어다.
 
 MediaPipe 는 합성 얼굴을 얼굴로 인식하지 않으므로 분석 결과는 `no_face` 가 된다.
 그것으로 충분하다 — 검사 대상은 색 과학이 아니라 **업로드 -> 편입 -> 분석 -> 안내**
@@ -14,6 +14,7 @@ MediaPipe 는 합성 얼굴을 얼굴로 인식하지 않으므로 분석 결과
 
 import io
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -44,7 +45,7 @@ def png_bytes(name="capture.png"):
 def test_guidance_covers_every_reason_code():
     """새 `ReasonCode` 가 생기면 안내 문장도 반드시 따라와야 한다.
 
-    `web/CLAUDE.md` 가 규칙으로 선언해 두었지만 **강제하는 장치가 없었다.**
+    규칙으로 선언되어 있었지만 **강제하는 장치가 없었다.**
     빠지면 사용자는 왜 실패했는지 모른 채 같은 실수를 반복한다.
     """
     codes = {c.value for c in ReasonCode}
@@ -176,13 +177,20 @@ def test_gate_failure_is_explained_not_scored(client):
 
 
 def test_ingest_is_idempotent_for_the_same_bytes(client, tmp_path):
-    """같은 사진을 두 번 올려도 capture_id 가 같고 디렉터리가 늘지 않는다."""
+    """같은 사진을 두 번 올려도 capture_id 가 같고 디렉터리가 늘지 않는다.
+
+    **초 경계를 일부러 넘긴다.** capture_id 의 시각 부분은 EXIF 가 없으면 파일
+    mtime 에서 오는데, 브라우저 캡처는 EXIF 없는 PNG 라 업로드마다 시각이 달라진다.
+    두 업로드가 같은 1초 안에 들어가면 이 버그가 보이지 않는다 — 실제로 그렇게
+    통과했다가 초 경계를 넘긴 실행에서 실패하는 flaky 테스트였다.
+    """
     name, data, ct = png_bytes()
     first = client.post("/api/analyze", files={"image": (name, data, ct)},
                         data={"capture_path": "upload"}).json()["capture_id"]
+    time.sleep(1.1)
     second = client.post("/api/analyze", files={"image": (name, data, ct)},
                          data={"capture_path": "upload"}).json()["capture_id"]
-    assert first == second
+    assert first == second, "같은 사진이 서로 다른 캡처로 쌓인다"
     assert len([p for p in tmp_path.iterdir() if p.is_dir()]) == 1
 
 

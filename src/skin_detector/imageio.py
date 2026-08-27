@@ -270,6 +270,20 @@ def ingest(src: Path, store: Path,
             "검증 데이터로 쓰면 오염된다".format(src.name))
 
     cap_dir = Path(store) / meta.capture_id
+    if not cap_dir.exists():
+        # 같은 사진이 다른 타임스탬프로 이미 들어와 있으면 **그 디렉터리를 쓴다.**
+        #
+        # capture_id 의 시각 부분은 EXIF `DateTimeOriginal` 이 없으면 파일 mtime 에서
+        # 온다. mtime 은 사진의 성질이 아니라 파일의 성질이라, 같은 사진을 다시
+        # 올리면 시각만 달라져 **별도 캡처로 쌓인다.** 브라우저 캡처(EXIF 없는 PNG)가
+        # 정확히 이 경우고, 그러면 store 에 중복이 생겨 검증 통계가 이중 계산된다.
+        #
+        # 내용 해시는 그대로이므로 그것으로 찾는다. id 형식은 바뀌지 않는다.
+        content_hash = meta.capture_id.rsplit("_", 1)[-1]
+        existing = sorted(Path(store).glob("*_" + content_hash))
+        if existing:
+            cap_dir = existing[0]
+            meta.capture_id = cap_dir.name
     cap_dir.mkdir(parents=True, exist_ok=True)
     (cap_dir / "results").mkdir(exist_ok=True)
 
