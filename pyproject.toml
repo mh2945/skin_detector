@@ -7,7 +7,12 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     "numpy>=1.24",
     "opencv-python>=4.8",
-    "mediapipe>=0.10.18",
+    # 상한을 막아 둔다. mediapipe 1.0.x 는 FaceLandmarker 생성 경로가 바뀌어
+    # `create_from_options` 에서 **SIGABRT 로 프로세스가 죽는다** (잡을 수 있는
+    # 예외가 아니다). 상한이 없으면 새 클론이 오늘 설치하는 것만으로 깨진다.
+    # 관찰은 macOS ARM 이다 — Windows + mediapipe 1.0.1 에서는 재현되지 않았고
+    # 정상 생성됐다. 플랫폼을 타는 문제라 핀을 풀 때는 양쪽에서 다시 확인할 것.
+    "mediapipe>=0.10.18,<0.11",
     "pillow>=10",
     "pillow-heif>=0.13",
 ]
@@ -15,6 +20,9 @@ dependencies = [
 [project.optional-dependencies]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "python-multipart>=0.0.9"]
 dev = ["pytest>=7", "pytest-cov>=5", "httpx2"]
+# 라벨링 도구(scripts/label.py) 전용. 제품 경로가 아니라 사람이 쓰는 도구다 —
+# core/ 는 이것을 import 하지 않는다 (계약 1번).
+label = ["matplotlib>=3.7"]
 
 [build-system]
 requires = ["setuptools>=68"]

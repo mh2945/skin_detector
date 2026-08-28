@@ -53,9 +53,10 @@ $venvPy = Join-Path $root ".venv\Scripts\python.exe"
 Write-Host "의존성 설치..." -ForegroundColor Cyan
 & $venvPy -m pip install --quiet --upgrade pip
 & $venvPy -m pip install --quiet `
-    numpy opencv-python mediapipe pillow pillow-heif `
+    numpy opencv-python "mediapipe<0.11" pillow pillow-heif `
     pytest pytest-cov httpx2 `
-    fastapi "uvicorn[standard]" python-multipart
+    fastapi "uvicorn[standard]" python-multipart `
+    matplotlib
 
 # ── 4. 랜드마커 모델 ──────────────────────────────────────────────────
 #
